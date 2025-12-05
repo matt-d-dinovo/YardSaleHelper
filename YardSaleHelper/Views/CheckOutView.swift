@@ -6,10 +6,12 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct CheckOutView: View {
     
     @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var total: Double = 0.00
     @State private var showSellerSheet: Bool = false
     @State private var sellerName: String = ""
@@ -19,6 +21,7 @@ struct CheckOutView: View {
     @State private var showCustomAmountSheet: Bool = false
     @State private var customAmountText: String = ""
     @State private var newSellerName: String = ""
+    @FocusState private var isNewSellerFieldFocused: Bool
     
     @State private var sellerTotals: [String: Double] = [:]
     @State private var lastAddedAmount: Double = 0
@@ -124,6 +127,22 @@ struct CheckOutView: View {
                         Section(header: Text("Create New Seller")) {
                             HStack {
                                 TextField("New seller name", text: $newSellerName)
+                                    .textInputAutocapitalization(.words)
+                                    .autocorrectionDisabled(false)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        let trimmed = newSellerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        guard !trimmed.isEmpty else { return }
+                                        if !sellers.contains(trimmed) {
+                                            sellers.append(trimmed)
+                                        }
+                                        if let newIndex = sellers.firstIndex(of: trimmed) {
+                                            selectedSellerIndex = newIndex
+                                        }
+                                        newSellerName = ""
+                                        isNewSellerFieldFocused = false
+                                    }
+                                    .focused($isNewSellerFieldFocused)
                                 Button("Add") {
                                     let trimmed = newSellerName.trimmingCharacters(in: .whitespacesAndNewlines)
                                     guard !trimmed.isEmpty else { return }
@@ -134,11 +153,13 @@ struct CheckOutView: View {
                                         selectedSellerIndex = newIndex
                                     }
                                     newSellerName = ""
+                                    isNewSellerFieldFocused = false
                                 }
                                 .disabled(newSellerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                         }
                     }
+                    .onAppear { isNewSellerFieldFocused = true }
                     .navigationTitle("Seller Info")
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -201,12 +222,23 @@ struct CheckOutView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("New Sale") {
+                        // Persist current seller totals as Sale records
+                        let now = Date()
+                        for (name, amount) in sellerTotals {
+                            guard amount > 0 else { continue }
+                            // Convert Double to Decimal safely
+                            let decimalAmount = Decimal(string: String(format: "%.2f", amount)) ?? Decimal(amount)
+                            let sale = Sale(sellerName: name, amount: decimalAmount, date: now)
+                            modelContext.insert(sale)
+                        }
+                        // Attempt to save the context
+                        try? modelContext.save()
+
+                        // Reset checkout state for a new sale
                         total = 0.0
                         sellerTotals.removeAll()
                         lastAddedAmount = 0
                         sellerNotes = ""
-                        // Optionally reset selection or custom input
-                        // selectedSellerIndex = 0
                         customAmountText = ""
                     }
                 }
